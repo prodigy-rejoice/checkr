@@ -1,0 +1,37 @@
+name: checkr
+description: "Detect counterfeit Nigerian Naira banknotes."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  stacked: ^3.4.3
+  stacked_services: ^1.3.0
+  camera: ^0.10.5+9
+  tflite_flutter: ^0.10.4
+  google_mlkit_text_recognition: ^0.11.0
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  image: ^4.1.3
+  path_provider: ^2.1.2
+  permission_handler: ^11.3.0
+  google_fonts: ^6.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  stacked_generator: ^1.3.3
+  build_runner: ^2.4.9
+  hive_generator: ^2.0.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/models/naira_autoencoder.tflite
