@@ -5,6 +5,13 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+repositories {
+    google()
+    mavenCentral()
+    maven { url = uri("https://jcenter.bintray.com") }
+    maven { url = uri("https://storage.googleapis.com/download.flutter.io") }
+}
+
 android {
     namespace = "com.example.checkr"
     compileSdk = flutter.compileSdkVersion
@@ -24,10 +31,14 @@ android {
         applicationId = "com.example.checkr"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 21
+        minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        ndk {
+            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
+        }
     }
 
     buildTypes {
@@ -37,6 +48,15 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    aaptOptions {
+        noCompress += listOf("tflite", "lite")
+    }
+}
+
+dependencies {
+    implementation("org.tensorflow:tensorflow-lite:2.10.0")
+    implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.10.0")
 }
 
 flutter {

@@ -16,17 +16,21 @@ class SplashView extends StatelessWidget {
         return Scaffold(
           backgroundColor: AppColors.primary,
           body: SafeArea(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Spacer(),
-                _buildLogo(),
-                const SizedBox(height: 16),
-                _buildTagline(),
-                const Spacer(),
-                _buildLoader(),
-                const SizedBox(height: 48),
-              ],
+            child: SizedBox(
+              width: double.infinity,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Spacer(),
+                  _buildLogo(),
+                  const SizedBox(height: 16),
+                  _buildTagline(),
+                  const Spacer(),
+                  _buildLoader(),
+                  const SizedBox(height: 48),
+                ],
+              ),
             ),
           ),
         );
@@ -36,6 +40,8 @@ class SplashView extends StatelessWidget {
 
   Widget _buildLogo() {
     return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Container(
           width: 64,
@@ -47,6 +53,7 @@ class SplashView extends StatelessWidget {
           child: Center(
             child: Text(
               '₦',
+              textAlign: TextAlign.center,
               style: AppTypography.display2.copyWith(
                 color: AppColors.primaryDark,
                 fontSize: 28,
@@ -58,6 +65,7 @@ class SplashView extends StatelessWidget {
         const SizedBox(height: 16),
         Text(
           'Checkr',
+          textAlign: TextAlign.center,
           style: AppTypography.display1.copyWith(
             color: AppColors.gold,
             fontSize: 40,
@@ -70,6 +78,7 @@ class SplashView extends StatelessWidget {
   Widget _buildTagline() {
     return Text(
       'Verify. Protect. Trust.',
+      textAlign: TextAlign.center,
       style: AppTypography.body1.copyWith(color: AppColors.textInverse),
     );
   }

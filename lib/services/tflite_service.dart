@@ -1,91 +1,75 @@
 import 'dart:typed_data';
+
+import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
-import 'package:tflite_flutter/tflite_flutter.dart';
+
 import '../core/constants/app_constants.dart';
 
 class TfliteService {
-  Interpreter? _interpreter;
+  static const MethodChannel _channel = MethodChannel('checkr/tflite');
+
+  bool _loaded = false;
 
   Future<void> loadModel() async {
-    _interpreter = await Interpreter.fromAsset(
-      'assets/models/naira_autoencoder.tflite',
+    final ok = await _channel.invokeMethod<bool>(
+      'loadModel',
+      <String, dynamic>{'assetPath': 'assets/models/naira_autoencoder_v2.tflite'},
     );
+    _loaded = ok ?? false;
   }
 
-  bool get isLoaded => _interpreter != null;
+  bool get isLoaded => _loaded;
 
   Future<Map<String, dynamic>> runInference(Uint8List imageBytes) async {
-    final interpreter = _interpreter;
-    if (interpreter == null) {
+    if (!_loaded) {
       return {'mseScore': 0.0, 'isGenuine': false};
     }
 
-    final inputTensor = _preprocessImage(imageBytes);
-    final outputTensor = List.generate(
-      1,
-      (_) => List.generate(
-        AppConstants.inputSize,
-        (_) => List.generate(
-          AppConstants.inputSize,
-          (_) => List.filled(3, 0.0),
-        ),
-      ),
+    final inputBytes = _preprocessToFloat32Bytes(imageBytes);
+    if (inputBytes == null) {
+      return {'mseScore': 0.0, 'isGenuine': false};
+    }
+
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'runInference',
+      <String, dynamic>{'input': inputBytes},
     );
 
-    interpreter.run(inputTensor, outputTensor);
+    if (result == null) {
+      return {'mseScore': 0.0, 'isGenuine': false};
+    }
 
-    final mse = _computeMse(inputTensor[0], outputTensor[0]);
-    return {'mseScore': mse, 'isGenuine': mse <= AppConstants.threshold};
+    final mse = (result['mseScore'] as num).toDouble();
+    final genuine = result['isGenuine'] as bool? ?? (mse <= AppConstants.threshold);
+    return {'mseScore': mse, 'isGenuine': genuine};
   }
 
-  List<List<List<List<double>>>> _preprocessImage(Uint8List imageBytes) {
+  Uint8List? _preprocessToFloat32Bytes(Uint8List imageBytes) {
     final decoded = img.decodeImage(imageBytes);
+    if (decoded == null) return null;
     final resized = img.copyResize(
-      decoded!,
+      decoded,
       width: AppConstants.inputSize,
       height: AppConstants.inputSize,
     );
 
-    final input = List.generate(
-      1,
-      (_) => List.generate(
-        AppConstants.inputSize,
-        (y) => List.generate(
-          AppConstants.inputSize,
-          (x) {
-            final pixel = resized.getPixel(x, y);
-            return [
-              (pixel.r / AppConstants.normalisationScale) - 1.0,
-              (pixel.g / AppConstants.normalisationScale) - 1.0,
-              (pixel.b / AppConstants.normalisationScale) - 1.0,
-            ];
-          },
-        ),
-      ),
+    final floats = Float32List(
+      AppConstants.inputSize * AppConstants.inputSize * 3,
     );
-    return input;
-  }
-
-  double _computeMse(
-    List<List<List<double>>> input,
-    List<List<List<double>>> output,
-  ) {
-    double sum = 0.0;
-    int count = 0;
-    for (int y = 0; y < AppConstants.inputSize; y++) {
-      for (int x = 0; x < AppConstants.inputSize; x++) {
-        for (int c = 0; c < 3; c++) {
-          final diff = input[y][x][c] - output[y][x][c];
-          sum += diff * diff;
-          count++;
-        }
+    var i = 0;
+    for (var y = 0; y < AppConstants.inputSize; y++) {
+      for (var x = 0; x < AppConstants.inputSize; x++) {
+        final p = resized.getPixel(x, y);
+        floats[i++] = (p.r / AppConstants.normalisationScale) - 1.0;
+        floats[i++] = (p.g / AppConstants.normalisationScale) - 1.0;
+        floats[i++] = (p.b / AppConstants.normalisationScale) - 1.0;
       }
     }
-    return sum / count;
+    return floats.buffer.asUint8List();
   }
 
-  void dispose() {
-    _interpreter?.close();
-    _interpreter = null;
+  Future<void> dispose() async {
+    await _channel.invokeMethod('dispose');
+    _loaded = false;
   }
 }
