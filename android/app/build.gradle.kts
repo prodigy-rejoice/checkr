@@ -55,8 +55,8 @@ android {
 }
 
 dependencies {
-    implementation("org.tensorflow:tensorflow-lite:2.10.0")
-    implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.10.0")
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.14.0")
 }
 
 flutter {
