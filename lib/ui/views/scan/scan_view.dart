@@ -41,7 +41,16 @@ class ScanView extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        CameraPreview(controller),
+        Positioned.fill(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: controller.value.previewSize?.height ?? size.width,
+              height: controller.value.previewSize?.width ?? size.height,
+              child: CameraPreview(controller),
+            ),
+          ),
+        ),
         Container(color: AppColors.scanOverlay),
         ScanOverlayWidget(qualityResult: vm.qualityResult),
         Positioned(

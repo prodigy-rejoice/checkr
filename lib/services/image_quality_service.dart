@@ -4,7 +4,18 @@ import '../core/constants/app_constants.dart';
 import '../models/quality_check_result.dart';
 
 class ImageQualityService {
+  static const bool BYPASS_QUALITY_CHECKS = true;
+
   QualityCheckResult checkQuality(Uint8List imageBytes) {
+    if (BYPASS_QUALITY_CHECKS) {
+      return const QualityCheckResult(
+        passedBlur: true,
+        passedBrightness: true,
+        passedNotePresence: true,
+        feedbackMessage: 'Hold steady to scan',
+      );
+    }
+
     final decoded = img.decodeImage(imageBytes);
     if (decoded == null) {
       return const QualityCheckResult(

@@ -11,11 +11,20 @@ class TfliteService {
   bool _loaded = false;
 
   Future<void> loadModel() async {
-    final ok = await _channel.invokeMethod<bool>(
-      'loadModel',
-      <String, dynamic>{'assetPath': 'assets/models/naira_autoencoder_v2.tflite'},
-    );
-    _loaded = ok ?? false;
+    try {
+      final ok = await _channel.invokeMethod<bool>(
+        'loadModel',
+        <String, dynamic>{'assetPath': 'assets/models/naira_autoencoder_v2.tflite'},
+      );
+      _loaded = ok ?? false;
+      // ignore: avoid_print
+      print('[TfliteService] loadModel result: $_loaded');
+    } catch (e, s) {
+      _loaded = false;
+      // ignore: avoid_print
+      print('[TfliteService] loadModel failed: $e\n$s');
+      rethrow;
+    }
   }
 
   bool get isLoaded => _loaded;

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:camera/camera.dart';
+import 'package:flutter/widgets.dart';
 import 'package:stacked/stacked.dart';
 import 'package:stacked_services/stacked_services.dart';
 import '../../../app/app.locator.dart';
@@ -13,7 +14,7 @@ import '../../../services/image_quality_service.dart';
 import '../../../services/ocr_service.dart';
 import '../../../services/tflite_service.dart';
 
-class ScanViewModel extends BaseViewModel {
+class ScanViewModel extends BaseViewModel with WidgetsBindingObserver {
   final _navigationService = locator<NavigationService>();
   final _tfliteService = locator<TfliteService>();
   final _ocrService = locator<OcrService>();
@@ -21,9 +22,12 @@ class ScanViewModel extends BaseViewModel {
   final _imageQualityService = locator<ImageQualityService>();
 
   CameraController? _cameraController;
+  CameraDescription? _cameraDescription;
   ScanStatus _status = ScanStatus.idle;
   QualityCheckResult? _qualityResult;
   bool _isTorchOn = false;
+  bool _isStreaming = false;
+  bool _isInitialising = false;
   DateTime _lastQualityCheck = DateTime(0);
 
   CameraController? get cameraController => _cameraController;
@@ -32,27 +36,72 @@ class ScanViewModel extends BaseViewModel {
   bool get isTorchOn => _isTorchOn;
 
   Future<void> initialise() async {
+    if (_isInitialising) return;
+    if (_cameraController?.value.isInitialized ?? false) return;
+    _isInitialising = true;
+    WidgetsBinding.instance.addObserver(this);
+
     try {
       final cameras = await availableCameras();
-      if (cameras.isEmpty) return;
+      if (cameras.isEmpty) {
+        _isInitialising = false;
+        return;
+      }
 
-      final backCamera = cameras.firstWhere(
+      _cameraDescription = cameras.firstWhere(
         (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
 
-      _cameraController = CameraController(
-        backCamera,
-        ResolutionPreset.high,
-        enableAudio: false,
-      );
-
-      await _cameraController!.initialize();
-      _cameraController!.startImageStream(_onCameraFrame);
-      notifyListeners();
+      await _startController(_cameraDescription!);
     } catch (e) {
       setError(e);
+    } finally {
+      _isInitialising = false;
     }
+  }
+
+  Future<void> _startController(CameraDescription description) async {
+    final controller = CameraController(
+      description,
+      ResolutionPreset.high,
+      enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.yuv420,
+    );
+    _cameraController = controller;
+    await controller.initialize();
+    await controller.startImageStream(_onCameraFrame);
+    _isStreaming = true;
+    notifyListeners();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) return;
+
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      _disposeController();
+    } else if (state == AppLifecycleState.resumed) {
+      final description = _cameraDescription;
+      if (description != null) {
+        _startController(description);
+      }
+    }
+  }
+
+  Future<void> _disposeController() async {
+    final controller = _cameraController;
+    _cameraController = null;
+    if (controller == null) return;
+    try {
+      if (_isStreaming) {
+        await controller.stopImageStream();
+        _isStreaming = false;
+      }
+    } catch (_) {}
+    await controller.dispose();
   }
 
   void _onCameraFrame(CameraImage frame) {
@@ -95,7 +144,10 @@ class ScanViewModel extends BaseViewModel {
     notifyListeners();
 
     try {
-      await controller.stopImageStream();
+      if (_isStreaming) {
+        await controller.stopImageStream();
+        _isStreaming = false;
+      }
       final image = await controller.takePicture();
       final imageBytes = await image.readAsBytes();
 
@@ -104,6 +156,7 @@ class ScanViewModel extends BaseViewModel {
         _status = ScanStatus.idle;
         notifyListeners();
         await controller.startImageStream(_onCameraFrame);
+        _isStreaming = true;
         return;
       }
 
@@ -155,7 +208,8 @@ class ScanViewModel extends BaseViewModel {
 
   @override
   void dispose() {
-    _cameraController?.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _disposeController();
     super.dispose();
   }
 }
