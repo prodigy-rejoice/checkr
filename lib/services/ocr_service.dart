@@ -8,6 +8,10 @@ class OcrService {
   final _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
   final _serialRegex = RegExp(AppConstants.serialPattern);
 
+  bool isValidCBNFormat(String serial) {
+    return _serialRegex.hasMatch(serial);
+  }
+
   Future<String?> extractSerial(Uint8List imageBytes) async {
     final decoded = img.decodeImage(imageBytes);
     if (decoded == null) return null;

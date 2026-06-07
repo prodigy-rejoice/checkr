@@ -15,7 +15,11 @@ class BlacklistRepository {
     return false;
   }
 
-  Future<void> addToBlacklist(BlacklistEntry entry) async {
+  Future<void> addToBlacklist(String serial, int denomination) async {
+    final entry = BlacklistEntry()
+      ..serialNumber = serial
+      ..denomination = denomination
+      ..isActive = true;
     await _hiveService.blacklistBox.add(entry);
   }
 
