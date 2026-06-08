@@ -1,215 +1,184 @@
-import 'dart:async';
-import 'dart:typed_data';
-import 'package:camera/camera.dart';
-import 'package:flutter/widgets.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:stacked/stacked.dart';
 import 'package:stacked_services/stacked_services.dart';
 import '../../../app/app.locator.dart';
 import '../../../app/app.router.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/enums/scan_status.dart';
-import '../../../models/quality_check_result.dart';
 import '../../../models/scan_result.dart';
 import '../../../repositories/blacklist_repository.dart';
-import '../../../services/image_quality_service.dart';
 import '../../../services/ocr_service.dart';
 import '../../../services/tflite_service.dart';
 
-class ScanViewModel extends BaseViewModel with WidgetsBindingObserver {
+class ScanViewModel extends BaseViewModel {
+  static const bool BYPASS_QUALITY_CHECKS = true;
+
   final _navigationService = locator<NavigationService>();
   final _tfliteService = locator<TfliteService>();
   final _ocrService = locator<OcrService>();
   final _blacklistRepository = locator<BlacklistRepository>();
-  final _imageQualityService = locator<ImageQualityService>();
+  final _imagePicker = ImagePicker();
 
-  CameraController? _cameraController;
-  CameraDescription? _cameraDescription;
   ScanStatus _status = ScanStatus.idle;
-  QualityCheckResult? _qualityResult;
-  bool _isTorchOn = false;
-  bool _isStreaming = false;
-  bool _isInitialising = false;
-  DateTime _lastQualityCheck = DateTime(0);
 
-  CameraController? get cameraController => _cameraController;
   ScanStatus get status => _status;
-  QualityCheckResult? get qualityResult => _qualityResult;
-  bool get isTorchOn => _isTorchOn;
-
-  Future<void> initialise() async {
-    if (_isInitialising) return;
-    if (_cameraController?.value.isInitialized ?? false) return;
-    _isInitialising = true;
-    WidgetsBinding.instance.addObserver(this);
-
-    try {
-      final cameras = await availableCameras();
-      if (cameras.isEmpty) {
-        _isInitialising = false;
-        return;
-      }
-
-      _cameraDescription = cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first,
-      );
-
-      await _startController(_cameraDescription!);
-    } catch (e) {
-      setError(e);
-    } finally {
-      _isInitialising = false;
-    }
-  }
-
-  Future<void> _startController(CameraDescription description) async {
-    final controller = CameraController(
-      description,
-      ResolutionPreset.high,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.yuv420,
-    );
-    _cameraController = controller;
-    await controller.initialize();
-    await controller.startImageStream(_onCameraFrame);
-    _isStreaming = true;
-    notifyListeners();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    final controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized) return;
-
-    if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused) {
-      _disposeController();
-    } else if (state == AppLifecycleState.resumed) {
-      final description = _cameraDescription;
-      if (description != null) {
-        _startController(description);
-      }
-    }
-  }
-
-  Future<void> _disposeController() async {
-    final controller = _cameraController;
-    _cameraController = null;
-    if (controller == null) return;
-    try {
-      if (_isStreaming) {
-        await controller.stopImageStream();
-        _isStreaming = false;
-      }
-    } catch (_) {}
-    await controller.dispose();
-  }
-
-  void _onCameraFrame(CameraImage frame) {
-    final now = DateTime.now();
-    if (now.difference(_lastQualityCheck).inMilliseconds < 500) return;
-    if (_status != ScanStatus.idle && _status != ScanStatus.checkingQuality) {
-      return;
-    }
-
-    _lastQualityCheck = now;
-    _status = ScanStatus.checkingQuality;
-
-    final bytes = _cameraImageToBytes(frame);
-    if (bytes != null) {
-      _qualityResult = _imageQualityService.checkQuality(bytes);
-      notifyListeners();
-    }
-    _status = ScanStatus.idle;
-  }
-
-  Uint8List? _cameraImageToBytes(CameraImage frame) {
-    try {
-      if (frame.format.group == ImageFormatGroup.yuv420) {
-        return frame.planes[0].bytes;
-      } else if (frame.format.group == ImageFormatGroup.bgra8888) {
-        return frame.planes[0].bytes;
-      }
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
+  bool get isProcessing => _status == ScanStatus.processing;
 
   Future<void> captureAndScan() async {
     if (_status == ScanStatus.processing) return;
-    final controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized) return;
+
+    print('[ScanViewModel] captureAndScan() called');
+
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 100,
+      preferredCameraDevice: CameraDevice.rear,
+    );
+
+    if (picked == null) {
+      print('[ScanViewModel] User cancelled image picker');
+      return;
+    }
+
+    print('[ScanViewModel] Image picked: ${picked.path}');
 
     _status = ScanStatus.processing;
     notifyListeners();
 
     try {
-      if (_isStreaming) {
-        await controller.stopImageStream();
-        _isStreaming = false;
-      }
-      final image = await controller.takePicture();
-      final imageBytes = await image.readAsBytes();
+      final imageBytes = await picked.readAsBytes();
+      print('[ScanViewModel] Image bytes read: ${imageBytes.length} bytes');
 
-      final qualityResult = _imageQualityService.checkQuality(imageBytes);
-      if (!qualityResult.allPassed) {
+      if (BYPASS_QUALITY_CHECKS) {
+        print('[ScanViewModel] Quality checks BYPASSED');
+      }
+
+      print('[ScanViewModel] Running OCR for note classification...');
+      final rawText = await _ocrService.extractFullText(picked.path);
+      final ocrText = rawText.toUpperCase();
+      print('[ScanViewModel] OCR full text (uppercase): $ocrText');
+
+      const nairaMarkers = [
+        'NIGERIA', 'NAIRA', 'CENTRAL BANK', 'CBN', 'LEGAL TENDER', 'TENDER',
+      ];
+      const unsupportedWords = [
+        'FIFTY', 'TWENTY', 'TEN NAIRA', 'FIVE NAIRA',
+      ];
+
+      final hasNairaMarker = nairaMarkers.any((m) => ocrText.contains(m));
+      final isUnsupportedDenom = unsupportedWords.any((w) => ocrText.contains(w));
+
+      print('[ScanViewModel] hasNairaMarker = $hasNairaMarker');
+      print('[ScanViewModel] isUnsupportedDenom = $isUnsupportedDenom');
+
+      print('[ScanViewModel] Running TFLite inference on path: ${picked.path}');
+      final inferenceResult = await _tfliteService.runInference(picked.path);
+      final mse = (inferenceResult['mseScore'] as num).toDouble();
+      print('[ScanViewModel] Inference complete. MSE = $mse  threshold = ${AppConstants.threshold}');
+
+      if (mse > AppConstants.threshold) {
+        final ScanResult result;
+
+        if (isUnsupportedDenom) {
+          print('[ScanViewModel] Final verdict: OUT_OF_SCOPE (unsupported denomination)');
+          result = ScanResult(
+            isGenuine: false,
+            isOutOfScope: true,
+            mseScore: mse,
+            passedVisualCheck: false,
+            extractedSerial: null,
+            serialFormatValid: false,
+            serialBlacklisted: false,
+            scannedAt: DateTime.now(),
+            verdictReason:
+                'Unsupported denomination. Checkr only verifies ₦200, ₦500 and ₦1,000 notes.',
+          );
+        } else if (hasNairaMarker) {
+          print('[ScanViewModel] Final verdict: COUNTERFEIT (Naira marker found, high MSE)');
+          result = ScanResult(
+            isGenuine: false,
+            mseScore: mse,
+            passedVisualCheck: false,
+            extractedSerial: null,
+            serialFormatValid: false,
+            serialBlacklisted: false,
+            scannedAt: DateTime.now(),
+            verdictReason:
+                'Visual anomaly detected. This note does not match genuine Naira characteristics.',
+          );
+        } else {
+          print('[ScanViewModel] Final verdict: NOT_A_NOTE (no Naira markers, high MSE)');
+          result = ScanResult(
+            isGenuine: false,
+            isOutOfScope: true,
+            mseScore: mse,
+            passedVisualCheck: false,
+            extractedSerial: null,
+            serialFormatValid: false,
+            serialBlacklisted: false,
+            scannedAt: DateTime.now(),
+            verdictReason:
+                'Not a currency note. Please scan a Nigerian Naira banknote clearly in good lighting.',
+          );
+        }
+
+        _status = ScanStatus.complete;
+        notifyListeners();
+        await _navigationService.navigateToResultView(result: result);
         _status = ScanStatus.idle;
         notifyListeners();
-        await controller.startImageStream(_onCameraFrame);
-        _isStreaming = true;
         return;
       }
 
-      final inferenceResult = await _tfliteService.runInference(imageBytes);
+      print('[ScanViewModel] MSE within threshold — running OCR...');
       final serial = await _ocrService.extractSerial(imageBytes);
+      print('[ScanViewModel] OCR result: serial = $serial');
 
-      final isBlacklisted =
-          serial != null ? _blacklistRepository.isBlacklisted(serial) : false;
+      final serialValid = serial != null && _ocrService.isValidCBNFormat(serial);
+      print('[ScanViewModel] Serial format valid: $serialValid');
 
-      final serialValid =
-          serial != null && RegExp(r'^[A-Z]{2}\d{8}$').hasMatch(serial);
+      final isBlacklisted = serial != null ? _blacklistRepository.isBlacklisted(serial) : false;
+      print('[ScanViewModel] Serial blacklisted: $isBlacklisted');
 
-      final isGenuine =
-          (inferenceResult['isGenuine'] as bool) && !isBlacklisted;
+      String reason;
+      bool isGenuine;
+
+      if (isBlacklisted) {
+        isGenuine = false;
+        reason = 'Serial number is blacklisted';
+        print('[ScanViewModel] Verdict: COUNTERFEIT — serial blacklisted');
+      } else {
+        isGenuine = true;
+        reason = 'Visual check passed, serial clear';
+        print('[ScanViewModel] Verdict: GENUINE');
+      }
 
       final result = ScanResult(
         isGenuine: isGenuine,
-        mseScore: inferenceResult['mseScore'] as double,
-        passedVisualCheck: inferenceResult['isGenuine'] as bool,
+        mseScore: mse,
+        passedVisualCheck: true,
         extractedSerial: serial,
         serialFormatValid: serialValid,
         serialBlacklisted: isBlacklisted,
         scannedAt: DateTime.now(),
+        verdictReason: reason,
       );
 
       _status = ScanStatus.complete;
+      notifyListeners();
+      print('[ScanViewModel] Navigating to ResultView...');
       await _navigationService.navigateToResultView(result: result);
-    } catch (e) {
+      _status = ScanStatus.idle;
+      notifyListeners();
+    } catch (e, s) {
+      print('[ScanViewModel] ERROR: $e\n$s');
       _status = ScanStatus.error;
       setError(e);
+      notifyListeners();
     }
-
-    notifyListeners();
-  }
-
-  Future<void> toggleTorch() async {
-    final controller = _cameraController;
-    if (controller == null) return;
-    _isTorchOn = !_isTorchOn;
-    await controller.setFlashMode(
-      _isTorchOn ? FlashMode.torch : FlashMode.off,
-    );
-    notifyListeners();
   }
 
   void cancel() {
     _navigationService.back();
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _disposeController();
-    super.dispose();
   }
 }

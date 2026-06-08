@@ -18,25 +18,30 @@ class ResultView extends StatelessWidget {
       viewModelBuilder: () => ResultViewModel(),
       onViewModelReady: (vm) => vm.initialise(result),
       builder: (context, vm, child) {
-        final isGenuine = vm.result.isGenuine;
+        final r = vm.result;
+        final backgroundColor = r.isOutOfScope
+            ? AppColors.warningLight
+            : r.isGenuine
+                ? AppColors.genuineLight
+                : AppColors.counterfeitLight;
+
         return Scaffold(
-          backgroundColor:
-              isGenuine ? AppColors.genuineLight : AppColors.counterfeitLight,
+          backgroundColor: backgroundColor,
           body: SafeArea(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: Column(
                 children: [
                   const SizedBox(height: 24),
-                  _buildVerdictIcon(isGenuine),
+                  _buildVerdictIcon(r),
                   const SizedBox(height: 16),
-                  _buildVerdictText(isGenuine),
+                  _buildVerdictText(r),
                   const SizedBox(height: 8),
                   _buildDenomination(),
                   const SizedBox(height: 24),
                   VerdictCardWidget(vm: vm),
                   const SizedBox(height: 16),
-                  _buildAdvisory(isGenuine),
+                  _buildAdvisory(r),
                   const SizedBox(height: 32),
                   _buildActions(vm),
                   const SizedBox(height: 16),
@@ -49,28 +54,47 @@ class ResultView extends StatelessWidget {
     );
   }
 
-  Widget _buildVerdictIcon(bool isGenuine) {
+  Widget _buildVerdictIcon(ScanResult r) {
+    final Color color;
+    final IconData icon;
+
+    if (r.isOutOfScope) {
+      color = AppColors.warning;
+      icon = Icons.info_outline;
+    } else if (r.isGenuine) {
+      color = AppColors.genuine;
+      icon = Icons.check;
+    } else {
+      color = AppColors.counterfeit;
+      icon = Icons.close;
+    }
+
     return Container(
       width: 96,
       height: 96,
-      decoration: BoxDecoration(
-        color: isGenuine ? AppColors.genuine : AppColors.counterfeit,
-        shape: BoxShape.circle,
-      ),
-      child: Icon(
-        isGenuine ? Icons.check : Icons.close,
-        color: Colors.white,
-        size: 52,
-      ),
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      child: Icon(icon, color: Colors.white, size: 52),
     );
   }
 
-  Widget _buildVerdictText(bool isGenuine) {
+  Widget _buildVerdictText(ScanResult r) {
+    final Color color;
+    final String text;
+
+    if (r.isOutOfScope) {
+      color = AppColors.warning;
+      text = 'UNVERIFIED';
+    } else if (r.isGenuine) {
+      color = AppColors.genuine;
+      text = 'GENUINE';
+    } else {
+      color = AppColors.counterfeit;
+      text = 'COUNTERFEIT';
+    }
+
     return Text(
-      isGenuine ? 'GENUINE' : 'COUNTERFEIT',
-      style: AppTypography.verdictLarge.copyWith(
-        color: isGenuine ? AppColors.genuine : AppColors.counterfeit,
-      ),
+      text,
+      style: AppTypography.verdictLarge.copyWith(color: color),
     );
   }
 
@@ -81,26 +105,39 @@ class ResultView extends StatelessWidget {
     );
   }
 
-  Widget _buildAdvisory(bool isGenuine) {
-    final text = isGenuine
-        ? 'This note shows no signs of tampering. Both visual and serial checks passed.'
-        : 'This note has been flagged. Do not accept it. Report suspicious notes to the CBN.';
+  Widget _buildAdvisory(ScanResult r) {
+    final Color bgColor;
+    final Color borderColor;
+    final Color textColor;
+    final String text;
+
+    if (r.isOutOfScope) {
+      bgColor = AppColors.warningLight;
+      borderColor = AppColors.warning;
+      textColor = AppColors.warning;
+      text = r.verdictReason;
+    } else if (r.isGenuine) {
+      bgColor = AppColors.genuineLight;
+      borderColor = AppColors.genuine;
+      textColor = AppColors.genuine;
+      text = 'This note shows no signs of tampering. Both visual and serial checks passed.';
+    } else {
+      bgColor = AppColors.counterfeitLight;
+      borderColor = AppColors.counterfeit;
+      textColor = AppColors.counterfeit;
+      text = 'This note has been flagged. Do not accept it. Report suspicious notes to the CBN.';
+    }
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isGenuine ? AppColors.genuineLight : AppColors.counterfeitLight,
+        color: bgColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isGenuine ? AppColors.genuine : AppColors.counterfeit,
-          width: 1,
-        ),
+        border: Border.all(color: borderColor, width: 1),
       ),
       child: Text(
         text,
-        style: AppTypography.body2.copyWith(
-          color: isGenuine ? AppColors.genuine : AppColors.counterfeit,
-        ),
+        style: AppTypography.body2.copyWith(color: textColor),
         textAlign: TextAlign.center,
       ),
     );
@@ -110,7 +147,7 @@ class ResultView extends StatelessWidget {
     return Column(
       children: [
         PrimaryButtonWidget(
-          label: 'Scan Another',
+          label: 'Scan Again',
           onPressed: vm.scanAnother,
         ),
         const SizedBox(height: 12),

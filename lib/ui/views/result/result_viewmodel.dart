@@ -13,7 +13,9 @@ class ResultViewModel extends BaseViewModel {
 
   String get formattedMse => _result.mseScore.toStringAsFixed(4);
 
-  String get displaySerial => _result.extractedSerial ?? 'Unreadable';
+  String get displaySerial => _result.extractedSerial ?? 'Not extracted';
+
+  String get verdictReason => _result.verdictReason;
 
   void initialise(ScanResult result) {
     _result = result;

@@ -50,6 +50,24 @@ class VerdictCardWidget extends StatelessWidget {
               !vm.result.serialBlacklisted,
             ),
           ),
+          _buildDivider(),
+          _buildRow(
+            'Reason',
+            Flexible(
+              child: Text(
+                vm.verdictReason,
+                style: AppTypography.body2.copyWith(
+                  color: vm.result.isOutOfScope
+                      ? AppColors.warning
+                      : vm.result.isGenuine
+                          ? AppColors.genuine
+                          : AppColors.counterfeit,
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.end,
+              ),
+            ),
+          ),
         ],
       ),
     );
