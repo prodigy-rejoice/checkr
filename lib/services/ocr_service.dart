@@ -61,6 +61,12 @@ class OcrService {
     return null;
   }
 
+  Future<String> extractFullText(String imagePath) async {
+    final inputImage = InputImage.fromFilePath(imagePath);
+    final recognized = await _textRecognizer.processImage(inputImage);
+    return recognized.text;
+  }
+
   void dispose() {
     _textRecognizer.close();
   }
