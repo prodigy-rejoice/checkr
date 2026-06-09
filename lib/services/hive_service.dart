@@ -3,7 +3,7 @@ import '../models/blacklist_entry.dart';
 
 class HiveService {
   static const String _blacklistBoxName = 'blacklist';
-  static const String _seedKey = 'seeded_v1';
+  static const String _seedKey = 'seeded_v2';
 
   late Box<BlacklistEntry> _blacklistBox;
   late Box<bool> _metaBox;
@@ -29,20 +29,27 @@ class HiveService {
   }
 
   List<BlacklistEntry> _buildSeedEntries() {
+    // Normalised serials (no spaces or slashes) — two real confirmed fakes first.
     final serials = [
+      'AA9334338',   // real fake ₦500
+      'Y64235913',   // real fake ₦1000
       'AB12345678', 'CD87654321', 'EF11223344', 'GH99887766', 'IJ55443322',
       'KL77889900', 'MN11223300', 'OP44556677', 'QR88997700', 'ST22334455',
       'UV66778899', 'WX33445566', 'YZ11009988', 'AC55667788', 'BD99001122',
       'CE44332211', 'DF88776655', 'EG22110099', 'FH66554433', 'GI00998877',
     ];
-    final denominations = [200, 500, 1000];
+    final denominations = [500, 1000,
+      200, 500, 1000, 200, 500,
+      1000, 200, 500, 1000, 200,
+      500, 1000, 200, 500, 1000,
+      200, 500, 1000, 200, 500,
+    ];
 
     return List.generate(serials.length, (i) {
-      final entry = BlacklistEntry()
+      return BlacklistEntry()
         ..serialNumber = serials[i]
-        ..denomination = denominations[i % denominations.length]
+        ..denomination = denominations[i]
         ..isActive = true;
-      return entry;
     });
   }
 }

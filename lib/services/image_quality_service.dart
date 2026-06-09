@@ -1,10 +1,14 @@
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
-import '../core/constants/app_constants.dart';
 import '../models/quality_check_result.dart';
 
 class ImageQualityService {
-  static const bool BYPASS_QUALITY_CHECKS = true;
+  static const bool BYPASS_QUALITY_CHECKS = false;
+
+  static const double _minLaplacianVariance = 30.0;
+  static const double _minBrightness = 40.0;
+  static const double _maxBrightness = 220.0;
+  static const double _minNoteAreaRatio = 0.20;
 
   QualityCheckResult checkQuality(Uint8List imageBytes) {
     if (BYPASS_QUALITY_CHECKS) {
@@ -27,14 +31,23 @@ class ImageQualityService {
     }
 
     final passedBlur = _checkBlur(decoded);
-    final passedBrightness = _checkBrightness(decoded);
+    final avgBrightness = _averageBrightness(decoded);
+    final passedBrightness =
+        avgBrightness >= _minBrightness && avgBrightness <= _maxBrightness;
     final passedNotePresence = _checkNotePresence(decoded);
 
-    final feedbackMessage = _buildFeedback(
-      passedBlur,
-      passedBrightness,
-      passedNotePresence,
-    );
+    String feedbackMessage;
+    if (!passedNotePresence) {
+      feedbackMessage = 'Move closer — note must fill more of the frame';
+    } else if (!passedBlur) {
+      feedbackMessage = 'Image too blurry — hold the camera still';
+    } else if (avgBrightness < _minBrightness) {
+      feedbackMessage = 'Image too dark — move to better lighting';
+    } else if (avgBrightness > _maxBrightness) {
+      feedbackMessage = 'Image too bright — reduce direct light';
+    } else {
+      feedbackMessage = 'Hold steady to scan';
+    }
 
     return QualityCheckResult(
       passedBlur: passedBlur,
@@ -44,10 +57,8 @@ class ImageQualityService {
     );
   }
 
-  bool _checkBlur(img.Image image) {
-    final variance = _laplacianVariance(image);
-    return variance >= AppConstants.minLaplacianVariance;
-  }
+  bool _checkBlur(img.Image image) =>
+      _laplacianVariance(image) >= _minLaplacianVariance;
 
   double _laplacianVariance(img.Image image) {
     final grayscale = img.grayscale(image);
@@ -78,51 +89,28 @@ class ImageQualityService {
     return (sumSq / count) - (mean * mean);
   }
 
-  bool _checkBrightness(img.Image image) {
-    double totalBrightness = 0.0;
+  double _averageBrightness(img.Image image) {
+    double total = 0.0;
     final pixelCount = image.width * image.height;
-
     for (int y = 0; y < image.height; y++) {
       for (int x = 0; x < image.width; x++) {
-        final pixel = image.getPixel(x, y);
-        totalBrightness += (pixel.r + pixel.g + pixel.b) / 3.0;
+        final p = image.getPixel(x, y);
+        total += (p.r + p.g + p.b) / 3.0;
       }
     }
-
-    final avgBrightness = totalBrightness / pixelCount;
-    return avgBrightness >= AppConstants.minBrightness &&
-        avgBrightness <= AppConstants.maxBrightness;
+    return total / pixelCount;
   }
 
   bool _checkNotePresence(img.Image image) {
-    int nonBackgroundCount = 0;
+    int nonBackground = 0;
     final pixelCount = image.width * image.height;
-
     for (int y = 0; y < image.height; y++) {
       for (int x = 0; x < image.width; x++) {
-        final pixel = image.getPixel(x, y);
-        final r = pixel.r.toDouble();
-        final g = pixel.g.toDouble();
-        final b = pixel.b.toDouble();
-
-        final brightness = (r + g + b) / 3.0;
-        if (brightness > 30 && brightness < 240) {
-          nonBackgroundCount++;
-        }
+        final p = image.getPixel(x, y);
+        final brightness = (p.r + p.g + p.b) / 3.0;
+        if (brightness > 30 && brightness < 240) nonBackground++;
       }
     }
-
-    return (nonBackgroundCount / pixelCount) >= AppConstants.minNoteAreaRatio;
-  }
-
-  String _buildFeedback(
-    bool passedBlur,
-    bool passedBrightness,
-    bool passedNotePresence,
-  ) {
-    if (!passedNotePresence) return 'Position the note within the frame';
-    if (!passedBlur) return 'Too blurry — hold the camera still';
-    if (!passedBrightness) return 'Adjust lighting for better visibility';
-    return 'Hold steady to scan';
+    return (nonBackground / pixelCount) >= _minNoteAreaRatio;
   }
 }

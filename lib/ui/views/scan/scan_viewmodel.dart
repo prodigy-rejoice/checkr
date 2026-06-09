@@ -45,6 +45,8 @@ class ScanViewModel extends BaseViewModel {
     _status = ScanStatus.processing;
     notifyListeners();
 
+    final stopwatch = Stopwatch()..start();
+
     try {
       final imageBytes = await picked.readAsBytes();
       print('[ScanViewModel] Image bytes read: ${imageBytes.length} bytes');
@@ -122,6 +124,8 @@ class ScanViewModel extends BaseViewModel {
           );
         }
 
+        stopwatch.stop();
+        print('[ScanViewModel] Total scan latency: ${stopwatch.elapsedMilliseconds}ms');
         _status = ScanStatus.complete;
         notifyListeners();
         await _navigationService.navigateToResultView(result: result);
@@ -130,11 +134,23 @@ class ScanViewModel extends BaseViewModel {
         return;
       }
 
-      print('[ScanViewModel] MSE within threshold — running OCR...');
-      final serial = await _ocrService.extractSerial(imageBytes);
-      print('[ScanViewModel] OCR result: serial = $serial');
+      print('[ScanViewModel] MSE within threshold — running serial OCR...');
 
-      final serialValid = serial != null && _ocrService.isValidCBNFormat(serial);
+      // First try extracting serial from the full OCR text we already have.
+      String? rawSerial = _ocrService.extractSerialFromText(ocrText);
+      print('[ScanViewModel] Serial from full text: $rawSerial');
+
+      // Fall back to cropped-image OCR if full-text search didn't find it.
+      if (rawSerial == null) {
+        print('[ScanViewModel] Full-text miss — trying cropped image OCR...');
+        rawSerial = await _ocrService.extractSerial(imageBytes);
+        print('[ScanViewModel] Serial from cropped OCR: $rawSerial');
+      }
+
+      final serial = rawSerial != null ? _ocrService.normaliseSerial(rawSerial) : null;
+      print('[ScanViewModel] OCR result: rawSerial = $rawSerial  normalised = $serial');
+
+      final serialValid = serial != null && _ocrService.isValidCBNFormat(rawSerial!);
       print('[ScanViewModel] Serial format valid: $serialValid');
 
       final isBlacklisted = serial != null ? _blacklistRepository.isBlacklisted(serial) : false;
@@ -143,13 +159,25 @@ class ScanViewModel extends BaseViewModel {
       String reason;
       bool isGenuine;
 
-      if (isBlacklisted) {
+      if (serial == null) {
         isGenuine = false;
-        reason = 'Serial number is blacklisted';
+        reason =
+            'Visual check passed but serial number could not be extracted. '
+            'Please retake the photo with the serial number clearly visible.';
+        print('[ScanViewModel] Verdict: UNVERIFIED — serial not extracted');
+      } else if (!serialValid) {
+        isGenuine = false;
+        reason =
+            'Visual check passed but the serial number format is invalid. '
+            'Detected: $serial';
+        print('[ScanViewModel] Verdict: SUSPICIOUS — invalid serial format');
+      } else if (isBlacklisted) {
+        isGenuine = false;
+        reason = 'Serial number is blacklisted.';
         print('[ScanViewModel] Verdict: COUNTERFEIT — serial blacklisted');
       } else {
         isGenuine = true;
-        reason = 'Visual check passed, serial clear';
+        reason = 'Visual check passed and serial number verified.';
         print('[ScanViewModel] Verdict: GENUINE');
       }
 
@@ -164,6 +192,8 @@ class ScanViewModel extends BaseViewModel {
         verdictReason: reason,
       );
 
+      stopwatch.stop();
+      print('[ScanViewModel] Total scan latency: ${stopwatch.elapsedMilliseconds}ms');
       _status = ScanStatus.complete;
       notifyListeners();
       print('[ScanViewModel] Navigating to ResultView...');

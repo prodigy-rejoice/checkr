@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:stacked/stacked.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/constants/app_typography.dart';
 import '../../../models/scan_result.dart';
 import '../../widgets/primary_button_widget.dart';
@@ -40,6 +41,8 @@ class ResultView extends StatelessWidget {
                   _buildDenomination(),
                   const SizedBox(height: 24),
                   VerdictCardWidget(vm: vm),
+                  const SizedBox(height: 12),
+                  _buildDebugPanel(vm),
                   const SizedBox(height: 16),
                   _buildAdvisory(r),
                   const SizedBox(height: 32),
@@ -102,6 +105,48 @@ class ResultView extends StatelessWidget {
     return Text(
       'Nigerian Naira Note',
       style: AppTypography.heading2.copyWith(color: AppColors.textSecondary),
+    );
+  }
+
+  Widget _buildDebugPanel(ResultViewModel vm) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.divider),
+        boxShadow: const [AppConstants.cardShadow],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _debugRow('MSE', vm.formattedMse),
+          const SizedBox(height: 4),
+          _debugRow('Serial', vm.displaySerial),
+          const SizedBox(height: 4),
+          _debugRow('Reason', vm.verdictReason),
+        ],
+      ),
+    );
+  }
+
+  Widget _debugRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 56,
+          child: Text(
+            '$label:',
+            style: AppTypography.label.copyWith(color: AppColors.textMuted),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(value, style: AppTypography.mono),
+        ),
+      ],
     );
   }
 
