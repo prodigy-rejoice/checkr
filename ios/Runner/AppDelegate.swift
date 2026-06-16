@@ -8,6 +8,7 @@ import UIKit
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     GeneratedPluginRegistrant.register(with: self)
+    TfliteChannelHandler.register(with: self.registrar(forPlugin: "TfliteChannelHandler")!)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 }

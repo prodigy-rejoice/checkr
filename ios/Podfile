@@ -31,6 +31,11 @@ target 'Runner' do
   use_frameworks!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+  # TFLite interpreter + Select TF ops (the model uses Flex/Select ops)
+  pod 'TensorFlowLiteSwift', '~> 2.14'
+  pod 'TensorFlowLiteSelectTfOps', '~> 2.14'
+
   target 'RunnerTests' do
     inherit! :search_paths
   end

@@ -1,10 +1,14 @@
 package com.example.checkr
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
 import io.flutter.FlutterInjector
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.flex.FlexDelegate
 import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -13,9 +17,11 @@ import java.nio.channels.FileChannel
 class TfliteChannelHandler(private val context: Context) : MethodChannel.MethodCallHandler {
 
     private var interpreter: Interpreter? = null
+    private var flexDelegate: FlexDelegate? = null
     private val inputSize = 224
     private val channels = 3
-    private val outputByteSize = 1 * inputSize * inputSize * channels * 4
+    private val floatCount = inputSize * inputSize * channels
+    private val bufferSize = floatCount * 4
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
@@ -25,6 +31,8 @@ class TfliteChannelHandler(private val context: Context) : MethodChannel.MethodC
             "dispose" -> {
                 interpreter?.close()
                 interpreter = null
+                flexDelegate?.close()
+                flexDelegate = null
                 result.success(true)
             }
             else -> result.notImplemented()
@@ -46,13 +54,18 @@ class TfliteChannelHandler(private val context: Context) : MethodChannel.MethodC
             input.close()
             afd.close()
 
+            flexDelegate?.close()
+            flexDelegate = FlexDelegate()
             val options = Interpreter.Options().apply {
                 setNumThreads(4)
+                addDelegate(flexDelegate)
             }
             interpreter?.close()
             interpreter = Interpreter(mapped, options)
+            println("[TfliteChannelHandler] Model loaded successfully")
             result.success(true)
         } catch (e: Throwable) {
+            println("[TfliteChannelHandler] loadModel failed: ${e.message}")
             result.error("LOAD_FAILED", e.message, e.stackTraceToString())
         }
     }
@@ -63,55 +76,62 @@ class TfliteChannelHandler(private val context: Context) : MethodChannel.MethodC
             result.error("NOT_LOADED", "Interpreter not loaded", null)
             return
         }
-        val bytes = call.argument<ByteArray>("input")
-        if (bytes == null) {
-            result.error("BAD_ARGS", "Missing input bytes", null)
+
+        val imagePath = call.argument<String>("imagePath")
+        if (imagePath == null) {
+            result.error("BAD_ARGS", "Missing imagePath", null)
             return
         }
-        if (bytes.size != outputByteSize) {
-            result.error(
-                "BAD_INPUT_SIZE",
-                "Expected $outputByteSize bytes, got ${bytes.size}",
-                null,
-            )
-            return
-        }
+
+        println("[TfliteChannelHandler] Decoding image: $imagePath")
 
         try {
-            val inputBuffer = ByteBuffer.allocateDirect(outputByteSize).order(ByteOrder.nativeOrder())
-            inputBuffer.put(bytes)
+            val raw = BitmapFactory.decodeFile(imagePath)
+                ?: throw IllegalArgumentException("Failed to decode image at $imagePath")
+
+            val bitmap = Bitmap.createScaledBitmap(raw, inputSize, inputSize, true)
+            if (raw !== bitmap) raw.recycle()
+
+            println("[TfliteChannelHandler] Bitmap resized to ${bitmap.width}x${bitmap.height}")
+
+            val inputFloats = FloatArray(floatCount)
+            var idx = 0
+            for (y in 0 until inputSize) {
+                for (x in 0 until inputSize) {
+                    val pixel = bitmap.getPixel(x, y)
+                    inputFloats[idx++] = (Color.red(pixel).toFloat() / 127.5f) - 1.0f
+                    inputFloats[idx++] = (Color.green(pixel).toFloat() / 127.5f) - 1.0f
+                    inputFloats[idx++] = (Color.blue(pixel).toFloat() / 127.5f) - 1.0f
+                }
+            }
+            bitmap.recycle()
+
+            println("[TfliteChannelHandler] Preprocessing done. Float array size: ${inputFloats.size}")
+
+            val inputBuffer = ByteBuffer.allocateDirect(bufferSize).order(ByteOrder.nativeOrder())
+            for (f in inputFloats) inputBuffer.putFloat(f)
             inputBuffer.rewind()
 
-            val outputBuffer = ByteBuffer.allocateDirect(outputByteSize).order(ByteOrder.nativeOrder())
-            outputBuffer.rewind()
+            val outputBuffer = ByteBuffer.allocateDirect(bufferSize).order(ByteOrder.nativeOrder())
 
             tflite.run(inputBuffer, outputBuffer)
 
-            val inputFloats = inputBuffer.asReadOnlyBuffer().order(ByteOrder.nativeOrder()).asFloatBuffer()
-            inputFloats.rewind()
-            val outputFloats = outputBuffer.asReadOnlyBuffer().order(ByteOrder.nativeOrder()).asFloatBuffer()
-            outputFloats.rewind()
+            outputBuffer.rewind()
+            val outputFloatBuffer = outputBuffer.asFloatBuffer()
 
             var sum = 0.0
-            val count = inputSize * inputSize * channels
-            for (i in 0 until count) {
-                val diff = inputFloats.get().toDouble() - outputFloats.get().toDouble()
+            for (i in 0 until floatCount) {
+                val diff = inputFloats[i].toDouble() - outputFloatBuffer.get().toDouble()
                 sum += diff * diff
             }
-            val mse = sum / count
+            val mse = sum / floatCount
 
-            result.success(
-                mapOf(
-                    "mseScore" to mse,
-                    "isGenuine" to (mse <= THRESHOLD),
-                ),
-            )
+            println("[TfliteChannelHandler] Inference complete. MSE = $mse")
+
+            result.success(mse)
         } catch (e: Throwable) {
+            println("[TfliteChannelHandler] Inference failed: ${e.message}\n${e.stackTraceToString()}")
             result.error("INFERENCE_FAILED", e.message, e.stackTraceToString())
         }
-    }
-
-    companion object {
-        private const val THRESHOLD = 0.201362
     }
 }
