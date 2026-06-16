@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 class AppConstants {
-  static const double mu = 0.119103;
-  static const double sigma = 0.041130;
-  static const double threshold = 0.201362;
+  static const double mu = 0.051376;
+  static const double sigma = 0.013475;
+  static const double threshold = 0.078327;
 
   static const int inputSize = 224;
   static const double normalisationScale = 127.5;
