@@ -8,7 +8,7 @@ class OcrService {
   final _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
 
   // ^[A-Z]{1,2}\/?\d{1,2}\s?\d{6}$
-  // Matches: AA/9 334338, Y/64 235913, AA9334338, Y64235913
+  // Matches CBN SERIAL NUMBER FORMAT
   static final _serialRegex = RegExp(r'^[A-Z]{1,2}\/?\d{1,2}\s?\d{6}$');
 
   bool isValidCBNFormat(String serial) => _serialRegex.hasMatch(serial);
